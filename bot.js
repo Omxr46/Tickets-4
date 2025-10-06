@@ -1,90 +1,116 @@
 import 'dotenv/config';
-import { Client, Collection, GatewayIntentBits, Partials, REST, Routes, Events, PermissionFlagsBits } from 'discord.js';
+import { Client, Collection, GatewayIntentBits, Partials, REST, Routes, Events, PermissionFlagsBits, EmbedBuilder } from 'discord.js';
 import { ensureDatabase } from './db.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
 
+// Start HTTP server FIRST - this keeps Render happy
+const port = process.env.PORT || 3000;
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Discord bot is running');
+});
+
+server.listen(port, () => {
+  console.log(`HTTP server listening on port ${port}`);
+});
+
+// Basic env validation
+function validateEnv() {
+  const token = process.env.DISCORD_TOKEN || '';
+  const appId = process.env.DISCORD_CLIENT_ID || process.env.CLIENT_ID || '';
+  
+  if (!token) {
+    console.error('Missing DISCORD_TOKEN in environment.');
+    return false;
+  }
+  
+  const looksLikeToken = token.split('.').length === 3 && !token.startsWith('Bot ');
+  if (!looksLikeToken) {
+    console.error('DISCORD_TOKEN does not look like a valid bot token.');
+    return false;
+  }
+  
+  if (!appId) {
+    console.error('Missing DISCORD_CLIENT_ID (Application ID) in environment.');
+    return false;
+  }
+  
+  return true;
+}
+
+// Embed helper
+function createBrandEmbed(title, description) {
+  const BRAND_COLOR = 0xF1C40F;
+  const BOT_DISPLAY_NAME = 'Light Services Ticket-bot';
+  const embed = new EmbedBuilder()
+    .setColor(BRAND_COLOR)
+    .setTitle(title || BOT_DISPLAY_NAME)
+    .setDescription(description || null)
+    .setFooter({ text: BOT_DISPLAY_NAME });
+  return embed;
+}
+
+// Initialize database
+ensureDatabase();
+
+// Create Discord client
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds
-  ],
+  intents: [GatewayIntentBits.Guilds],
   partials: [Partials.Channel, Partials.GuildMember, Partials.Message, Partials.Reaction, Partials.User]
 });
 
 client.commands = new Collection();
 
-// Dynamically load commands from the correct folder
-try {
-  const commandsPath = path.join(process.cwd(), 'commands');
-  if (fs.existsSync(commandsPath)) {
-    const commandFiles = fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'));
-    for (const file of commandFiles) {
-      try {
-        const filePath = path.join(commandsPath, file);
-        const command = (await import(pathToFileURL(filePath).href)).default;
-        if (command?.data?.name) {
-          client.commands.set(command.data.name, command);
+// Load commands function
+async function loadCommands() {
+  try {
+    const commandsPath = path.join(process.cwd(), 'commands');
+    if (fs.existsSync(commandsPath)) {
+      const commandFiles = fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'));
+      for (const file of commandFiles) {
+        try {
+          const filePath = path.join(commandsPath, file);
+          const command = await import(new URL(filePath, import.meta.url).href);
+          if (command.default?.data?.name) {
+            client.commands.set(command.default.data.name, command.default);
+          }
+        } catch (err) {
+          console.error(`Failed to load command ${file}:`, err);
         }
-      } catch (err) {
-        console.error(`Failed to load command ${file}:`, err);
       }
     }
-  }
-} catch (err) {
-  console.error('Failed to load commands:', err);
-}
-
-// Fallback safe import for pathToFileURL without top import noise
-function pathToFileURL(p) {
-  const url = new URL('file://');
-  const pathname = path.resolve(p).replace(/\\/g, '/');
-  url.pathname = pathname.startsWith('/') ? pathname : `/${pathname}`;
-  return url;
-}
-
-ensureDatabase();
-
-// Basic env preflight to surface common token misconfigurations early
-function validateEnvOrExit() {
-  const token = process.env.DISCORD_TOKEN || '';
-  const appId = process.env.DISCORD_CLIENT_ID || process.env.CLIENT_ID || '';
-  if (!token) {
-    console.error('Missing DISCORD_TOKEN in environment.');
-    process.exit(1);
-  }
-  // Discord bot tokens are three dot-separated parts. This won't validate authenticity, just shape.
-  const looksLikeToken = token.split('.').length === 3 && !token.startsWith('Bot ');
-  if (!looksLikeToken) {
-    console.error('DISCORD_TOKEN does not look like a valid bot token. Ensure you pasted the Bot Token (three dot-separated parts), without quotes or "Bot ".');
-    process.exit(1);
-  }
-  if (!appId) {
-    console.error('Missing DISCORD_CLIENT_ID (Application ID) in environment.');
+  } catch (err) {
+    console.error('Failed to load commands:', err);
   }
 }
 
-// Start HTTP server FIRST for Render
-const port = process.env.PORT || 3000;
-http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Discord bot is running');
-}).listen(port, () => {
-  console.log(`HTTP server listening on port ${port}`);
-});
+// Start the bot
+async function startBot() {
+  if (!validateEnv()) {
+    console.log('Environment validation failed, but HTTP server is running');
+    return;
+  }
 
-// Then validate env and start bot
-try {
-  validateEnvOrExit();
-} catch (error) {
-  console.error('Env validation failed:', error);
-  process.exit(1);
+  try {
+    await loadCommands();
+    await client.login(process.env.DISCORD_TOKEN);
+  } catch (error) {
+    console.error('Bot startup failed:', error);
+  }
 }
 
+// Event handlers
 client.once(Events.ClientReady, (c) => {
   console.log(`Logged in as ${c.user.tag}`);
   startAutoArchiveSweep();
-  try { c.user.setPresence({ activities: [{ name: 'Light Services tickets', type: 3 }], status: 'online' }); } catch {}
+  try { 
+    c.user.setPresence({ 
+      activities: [{ name: 'Light Services tickets', type: 3 }], 
+      status: 'online' 
+    }); 
+  } catch {}
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -126,10 +152,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
-// Ticket helpers
+// Import database functions
 import { getGuildConfig, ensureTicket, getTicketByChannelId, updateTicketStatus, addUserToTicket, removeUserFromTicket, claimTicket, unclaimTicket, countOpenTicketsForUser, getLastTicketCreatedAt, getClosedTicketsOlderThan, markTicketArchived, getPanelById, countOpenTicketsForUserInPanel, getLastTicketCreatedAtInPanel, setTicketCloseReason } from './db.js';
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, ModalBuilder, TextInputBuilder, TextInputStyle, PermissionsBitField } from 'discord.js';
 
+// Ticket functions
 async function createTicketChannel(interaction, reason, panel = null) {
   const guild = interaction.guild;
   const member = interaction.member;
@@ -253,7 +280,6 @@ const buttonHandlers = {
     await interaction.showModal(modal);
   },
   async openpanel(interaction, panelId) {
-    // open using a specific panel, carrying panelId via modal
     const modal = new ModalBuilder().setCustomId(`ticket:openpanel:${panelId}`).setTitle('Open a Ticket');
     const reasonInput = new TextInputBuilder()
       .setCustomId('reason')
@@ -270,7 +296,6 @@ const buttonHandlers = {
     }
     const ticket = getTicketByChannelId(interaction.channelId);
     if (!ticket) return interaction.reply({ content: 'Not a ticket channel.', ephemeral: true });
-    // Ask for a close reason via modal
     const modal = new ModalBuilder().setCustomId(`ticket:closereason:${ticket.id}`).setTitle('Close Ticket');
     const reasonInput = new TextInputBuilder().setCustomId('close_reason').setLabel('Close reason').setStyle(TextInputStyle.Paragraph).setRequired(false).setMaxLength(1000);
     modal.addComponents(new ActionRowBuilder().addComponents(reasonInput));
@@ -343,7 +368,6 @@ const buttonHandlers = {
 const modalHandlers = {
   async open(interaction) {
     const reason = interaction.fields.getTextInputValue('reason');
-    // Limits and cooldowns
     const config = getGuildConfig(interaction.guildId) || {};
     const maxOpen = config.max_open_tickets ?? config.maxOpenTickets ?? null;
     const cooldownSec = config.open_cooldown_sec ?? config.openCooldownSec ?? null;
@@ -376,15 +400,14 @@ const modalHandlers = {
     if (!ticket) return interaction.reply({ content: 'Not a ticket channel.', ephemeral: true });
     setTicketCloseReason(ticket.id, reason);
     await updateTicketStatus(ticket.id, 'closed');
-		await interaction.reply({ content: `Ticket closed by ${interaction.user.tag}. Reason: ${reason}`, components: [buildReopenRow(ticket.id)] });
-		// If an admin/staff closed the ticket, delete the channel after 5 seconds
-		try {
-			if (isStaffOrAdmin(interaction.member, interaction.guildId)) {
-				setTimeout(async () => {
-					try { await interaction.channel.delete('Auto-delete 5s after close by staff'); } catch {}
-				}, 5000);
-			}
-		} catch {}
+    await interaction.reply({ content: `Ticket closed by ${interaction.user.tag}. Reason: ${reason}`, components: [buildReopenRow(ticket.id)] });
+    try {
+      if (isStaffOrAdmin(interaction.member, interaction.guildId)) {
+        setTimeout(async () => {
+          try { await interaction.channel.delete('Auto-delete 5s after close by staff'); } catch {}
+        }, 5000);
+      }
+    } catch {}
   },
   async openpanel(interaction) {
     const reason = interaction.fields.getTextInputValue('reason');
@@ -395,7 +418,6 @@ const modalHandlers = {
       await interaction.reply({ content: 'Panel not found.', ephemeral: true });
       return;
     }
-    // Per-panel limits/cooldowns
     if (panel.max_open_tickets) {
       const currentOpen = countOpenTicketsForUserInPanel(interaction.guildId, interaction.user.id, panel.id);
       if (currentOpen >= panel.max_open_tickets) {
@@ -414,13 +436,6 @@ const modalHandlers = {
         }
       }
     }
-    // temporarily override category for creation
-    const originalGetGuildConfig = getGuildConfig;
-    const wrappedGetGuildConfig = (guildId) => {
-      const cfg = originalGetGuildConfig(guildId) || {};
-      return { ...cfg, tickets_category_id: panel.category_id };
-    };
-    // create channel using overridden category
     const channel = await (async () => {
       const guild = interaction.guild;
       const member = interaction.member;
@@ -480,13 +495,6 @@ const modalHandlers = {
   }
 };
 
-try {
-  await client.login(process.env.DISCORD_TOKEN);
-} catch (error) {
-  console.error('Bot login failed:', error);
-  // Don't exit, keep HTTP server running
-}
-
 function startAutoArchiveSweep() {
   const intervalMs = 5 * 60 * 1000; // every 5 minutes
   setInterval(async () => {
@@ -511,4 +519,5 @@ function startAutoArchiveSweep() {
   }, intervalMs);
 }
 
-
+// Start the bot
+startBot();
