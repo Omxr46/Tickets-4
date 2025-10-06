@@ -56,9 +56,7 @@ function validateEnvOrExit() {
   }
 }
 
-validateEnvOrExit();
-
-// Start HTTP server immediately for Render
+// Start HTTP server FIRST for Render
 const port = process.env.PORT || 3000;
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -66,6 +64,14 @@ http.createServer((req, res) => {
 }).listen(port, () => {
   console.log(`HTTP server listening on port ${port}`);
 });
+
+// Then validate env and start bot
+try {
+  validateEnvOrExit();
+} catch (error) {
+  console.error('Env validation failed:', error);
+  process.exit(1);
+}
 
 client.once(Events.ClientReady, (c) => {
   console.log(`Logged in as ${c.user.tag}`);
@@ -466,7 +472,12 @@ const modalHandlers = {
   }
 };
 
-await client.login(process.env.DISCORD_TOKEN);
+try {
+  await client.login(process.env.DISCORD_TOKEN);
+} catch (error) {
+  console.error('Bot login failed:', error);
+  // Don't exit, keep HTTP server running
+}
 
 function startAutoArchiveSweep() {
   const intervalMs = 5 * 60 * 1000; // every 5 minutes
