@@ -58,23 +58,16 @@ function validateEnvOrExit() {
 
 validateEnvOrExit();
 
-// Expose a minimal HTTP server for Render Web Service health checks
-(() => {
-  const port = Number(process.env.PORT || 0);
-  if (!port) return;
-  const server = http.createServer((req, res) => {
-    if (req.url === '/health') {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true }));
-      return;
-    }
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Discord bot is running');
-  });
-  server.listen(port, () => {
-    console.log(`Health server listening on port ${port}`);
-  });
-})();
+// Start HTTP server for Render Web Service
+const port = process.env.PORT || 3000;
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Discord bot is running');
+});
+
+server.listen(port, () => {
+  console.log(`HTTP server listening on port ${port}`);
+});
 
 client.once(Events.ClientReady, (c) => {
   console.log(`Logged in as ${c.user.tag}`);
