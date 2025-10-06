@@ -3,6 +3,7 @@ import { Client, Collection, GatewayIntentBits, Partials, REST, Routes, Events, 
 import { ensureDatabase } from './db.js';
 import fs from 'node:fs';
 import path from 'node:path';
+import http from 'node:http';
 
 const client = new Client({
   intents: [
@@ -56,6 +57,24 @@ function validateEnvOrExit() {
 }
 
 validateEnvOrExit();
+
+// Expose a minimal HTTP server for Render Web Service health checks
+(() => {
+  const port = Number(process.env.PORT || 0);
+  if (!port) return;
+  const server = http.createServer((req, res) => {
+    if (req.url === '/health') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Discord bot is running');
+  });
+  server.listen(port, () => {
+    console.log(`Health server listening on port ${port}`);
+  });
+})();
 
 client.once(Events.ClientReady, (c) => {
   console.log(`Logged in as ${c.user.tag}`);
