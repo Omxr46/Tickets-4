@@ -58,21 +58,21 @@ function validateEnvOrExit() {
 
 validateEnvOrExit();
 
-// Start HTTP server for Render Web Service
-const port = process.env.PORT || 3000;
-const server = http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Discord bot is running');
-});
-
-server.listen(port, () => {
-  console.log(`HTTP server listening on port ${port}`);
-});
-
 client.once(Events.ClientReady, (c) => {
   console.log(`Logged in as ${c.user.tag}`);
   startAutoArchiveSweep();
   try { c.user.setPresence({ activities: [{ name: 'Light Services tickets', type: 3 }], status: 'online' }); } catch {}
+  
+  // Start HTTP server after bot is ready
+  const port = process.env.PORT || 3000;
+  const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Discord bot is running');
+  });
+  
+  server.listen(port, () => {
+    console.log(`HTTP server listening on port ${port}`);
+  });
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
