@@ -15,16 +15,24 @@ const client = new Client({
 client.commands = new Collection();
 
 // Dynamically load commands from the correct folder
-const commandsPath = path.join(process.cwd(), 'commands');
-if (fs.existsSync(commandsPath)) {
-  const commandFiles = fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'));
-  for (const file of commandFiles) {
-    const filePath = path.join(commandsPath, file);
-    const command = (await import(pathToFileURL(filePath).href)).default;
-    if (command?.data?.name) {
-      client.commands.set(command.data.name, command);
+try {
+  const commandsPath = path.join(process.cwd(), 'commands');
+  if (fs.existsSync(commandsPath)) {
+    const commandFiles = fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'));
+    for (const file of commandFiles) {
+      try {
+        const filePath = path.join(commandsPath, file);
+        const command = (await import(pathToFileURL(filePath).href)).default;
+        if (command?.data?.name) {
+          client.commands.set(command.data.name, command);
+        }
+      } catch (err) {
+        console.error(`Failed to load command ${file}:`, err);
+      }
     }
   }
+} catch (err) {
+  console.error('Failed to load commands:', err);
 }
 
 // Fallback safe import for pathToFileURL without top import noise
