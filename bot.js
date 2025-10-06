@@ -37,12 +37,19 @@ client.commands = new Collection();
     
     try {
 const commandsPath = path.join(process.cwd(), 'commands');
+      console.log('Commands path:', commandsPath);
+      console.log('Commands path exists:', fs.existsSync(commandsPath));
+      
 if (fs.existsSync(commandsPath)) {
   const commandFiles = fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'));
+        console.log('Command files found:', commandFiles);
+        
   for (const file of commandFiles) {
           try {
     const filePath = path.join(commandsPath, file);
-            const command = await import(new URL(filePath, import.meta.url).href);
+            console.log('Loading command from:', filePath);
+            const command = await import(filePath);
+            console.log('Command loaded:', command.default);
             if (command.default?.data?.name) {
               client.commands.set(command.default.data.name, command.default);
               console.log(`Loaded command: ${command.default.data.name}`);
